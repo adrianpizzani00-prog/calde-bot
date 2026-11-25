@@ -18,33 +18,48 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AQ.Ab8RN6LW13eL7Kn5plAXhfR
 const MODEL_NAME = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
+const COMPROBANTE_MESSAGE = `¡Tu cita ha quedado confirmada! ✅
+
+Te dejamos unos detalles para que todo salga perfecto:
+
+⏰ Contamos con 10 min de tolerancia. Después de ese tiempo, el anticipo no es reembolsable.
+
+📅 Si necesitas cancelar o reprogramar, avísanos con al menos 3 horas de anticipación para conservar tu anticipo.
+
+⚠️ Por comodidad de todos, no se permiten mascotas.
+
+📍 Ubicación:
+https://maps.app.goo.gl/gViUPi5AikRpw2Df7?g_st=ic
+Condominio Ferrara Piso 1 Oficina 15`;
+
 const SYSTEM_INSTRUCTION = `
 Eres el asistente virtual de "Calde Studio" (estudio de barbería masculina).
-Tu objetivo es responder de forma amable, profesional, concisa, masculina y directa a las dudas de los clientes por WhatsApp, guiándolos siempre a reservar en Fresha o confirmando sus pagos por QR.
+Tu objetivo es responder de forma educada, amable, masculina, fluida y profesional a las dudas de los clientes por WhatsApp, guiándolos a reservar en Fresha o resolviendo sus inquietudes.
 
-Reglas de negocio estrictas:
-1. SERVICIOS Y PRECIOS:
+REGLAS DE INTERACCIÓN Y ESTILO:
+1. SALUDOS Y TONO:
+   - Al saludar, usa signos de admiración (ejemplo: ¡Buenas noches!, ¡Hola!).
+   - Cuando sea natural y coherente al responder positivamente, di "¡Claro que sí!".
+   - Puedes usar de vez en cuando un "😊" cuando sea oportuno y cordial, pero mantén el tono profesional y masculino.
+2. SALUDO INICIAL AISLADO (SILENCIO):
+   - El negocio ya cuenta con un mensaje automático de WhatsApp Business que envía información general.
+   - Si el cliente SOLO envía un saludo básico (ej: "Hola", "Buenas noches", "Buen día", "¿Hay alguien?") sin hacer ninguna pregunta adicional, RESPONDE ÚNICAMENTE CON LA PALABRA: "SILENCIO". De esta manera no duplicamos mensajes con la bienvenida automática.
+3. SERVICIOS Y PRECIOS:
    - Corte: 90 Bs (no incluye asesoría).
    - Corte y Asesoría: 120 Bs.
-   - Barba: +30 Bs adicionales (no se hace solo barba, únicamente se suma al servicio de Corte o Corte y Asesoría).
+   - Barba: +30 Bs adicionales (no se hace solo barba, únicamente se suma a Corte o Corte y Asesoría).
    - Cejas: +15 Bs.
-   * IMPORTANTE: No agregues descripciones largas a los servicios. Usa exactamente sus nombres simples: "Corte", "Corte y Asesoría", "Barba", "Cejas".
-2. DISPONIBILIDAD / "¿TIENES ESPACIO HOY?":
-   - Toda la disponibilidad en tiempo real, cancelaciones y selección de turnos se gestiona directamente en Fresha:
+   - Nombres simples y sin rodeos: "Corte", "Corte y Asesoría", "Barba", "Cejas".
+4. DISPONIBILIDAD / "¿TIENES ESPACIO HOY / MAÑANA / CUÁNDO HAY?":
+   - Explica con amabilidad que toda la disponibilidad en tiempo real y la selección de turnos se gestiona directamente en el enlace de Fresha:
      https://www.fresha.com/book-now/calde-barber-studio-gma54904/all-offer?share=true&pId=2669802
-   - Invítalos a ingresar al enlace para revisar los espacios disponibles para hoy o fechas posteriores.
-3. PROCESOS QUÍMICOS / SEMIONDULADOS / PERMANENTES:
-   - En Calde Studio no realizamos semiondulados, permanentes ni procesos químicos. Solo nos enfocamos en corte, asesoría y diseño de imagen.
-4. CONFIRMACIÓN CON QR / PAGOS:
-   - Si el cliente menciona que ya reservó en Fresha y pagó por QR o quiere enviar el comprobante, indícale de manera sobria y profesional que envíe el comprobante por este medio para dejarlo registrado para su cita.
-5. UBICACIÓN Y POLÍTICAS:
-   - Ubicación: Condominio "FERRARA", Piso 1, Of. 15.
-   - Google Maps: https://maps.app.goo.gl/Q5XWKyTJqAeU3ETP6
-   - Política de edad: No se atiende a menores de 12 años.
-6. TONO Y ESTILO:
-   - Tono sobrio, educado, masculino y directo al punto.
-   - CERO EMOJIS. No utilices emojis de ningún tipo (ni tijeras, ni barbería, ni manos).
-   - Mensajes breves (2 a 3 líneas máximo).
+5. PROCESOS QUÍMICOS / SEMIONDULADOS / PERMANENTES:
+   - En Calde Studio no realizamos semiondulados, permanentes ni procesos químicos. Solo corte, asesoría y diseño de imagen.
+6. POLÍTICA DE EDAD (MENORES DE 12 AÑOS):
+   - NO la repitas en cada mensaje. Solo menciónala si el cliente pregunta explícitamente por niños o cortes infantiles.
+7. CASOS EXCEPCIONALES / DERIVACIÓN A HUMANO:
+   - Si el cliente está llamando, pide hablar con una persona real, tiene un reclamo, una situación compleja o una duda fuera de tus conocimientos, responde identificándote como asistente:
+     "Estás hablando con el asistente virtual de Calde Studio. Notificaré a Adrián para que te responda personalmente lo antes posible 😊."
 `;
 
 async function askGemini(userText) {
@@ -73,6 +88,16 @@ async function askGemini(userText) {
   return "Puedes revisar horarios y reservar directamente en Fresha: https://www.fresha.com/book-now/calde-barber-studio-gma54904/all-offer?share=true&pId=2669802";
 }
 
+// Función para detectar si el mensaje debe ser ignorado (TikTok, Reels, videos)
+function isMediaOrVideoLink(text) {
+  const lower = text.toLowerCase();
+  return lower.includes('tiktok.com') ||
+         lower.includes('vt.tiktok.com') ||
+         lower.includes('instagram.com/reel') ||
+         lower.includes('youtube.com/shorts') ||
+         lower.includes('youtu.be');
+}
+
 async function startWhatsApp() {
   const authDir = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -93,7 +118,7 @@ async function startWhatsApp() {
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       currentQR = await QRCode.toDataURL(qr);
-      console.log('Nuevo QR generado. Abre el panel web para escanear.');
+      console.log('Nuevo QR generado.');
     }
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -117,34 +142,53 @@ async function startWhatsApp() {
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid) continue;
 
-      // Ignorar grupos, canales y estados
+      // 1. Ignorar grupos, canales, broadcasts
       if (remoteJid.endsWith('@g.us') || remoteJid.includes('broadcast') || remoteJid.includes('@newsletter')) {
         continue;
       }
 
-      // Extraer texto
+      // 2. Si envían un VIDEO directamente (archivo de video): IGNORAR
+      if (msg.message?.videoMessage) {
+        console.log(`[Video recibido de ${remoteJid}] -> Ignorado`);
+        continue;
+      }
+
       const text = msg.message?.conversation ||
                    msg.message?.extendedTextMessage?.text ||
                    msg.message?.imageMessage?.caption || '';
 
-      // Comprobante de pago (imagen)
-      if (msg.message?.imageMessage && !text) {
-        console.log(`[Comprobante recibido de ${remoteJid}]`);
-        await sock.sendMessage(remoteJid, {
-          text: "Comprobante recibido. Queda registrado para tu cita. Te esperamos en el estudio."
-        });
+      // 3. Si mandan un enlace de TikTok, Reels o Shorts: IGNORAR
+      if (isMediaOrVideoLink(text)) {
+        console.log(`[Link de video recibido de ${remoteJid}]: ${text} -> Ignorado`);
+        continue;
+      }
+
+      // 4. Si envían una IMAGEN (comprobante de pago QR)
+      if (msg.message?.imageMessage) {
+        console.log(`[Comprobante QR recibido de ${remoteJid}]`);
+        await sock.sendMessage(remoteJid, { text: COMPROBANTE_MESSAGE });
         continue;
       }
 
       if (!text || text.trim() === '') continue;
 
+      // Si en texto dice que ya pagó o pasa el qr
+      const lowerText = text.toLowerCase();
+      if ((lowerText.includes('comprobante') || lowerText.includes('ya transferi') || lowerText.includes('te paso el qr') || lowerText.includes('ya hice la reserva')) && !lowerText.includes('?')) {
+        await sock.sendMessage(remoteJid, { text: COMPROBANTE_MESSAGE });
+        continue;
+      }
+
       console.log(`[Mensaje de cliente ${remoteJid}]: ${text}`);
 
       try {
         const reply = await askGemini(text);
-        if (reply) {
+        // Si la IA decide silencio para no chocar con el mensaje de bienvenida
+        if (reply && reply.toUpperCase() !== 'SILENCIO') {
           await sock.sendMessage(remoteJid, { text: reply });
           console.log(`[Respuesta enviada a ${remoteJid}]: ${reply}`);
+        } else {
+          console.log(`[Silencio aplicado para ${remoteJid}]`);
         }
       } catch (err) {
         console.error('Error enviando respuesta:', err.message);
