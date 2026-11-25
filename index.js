@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
 const QRCode = require('qrcode');
@@ -14,7 +14,7 @@ let currentQR = null;
 let isConnected = false;
 
 // Configuración de Gemini API
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AQ.Ab8RN6LW13eL7Kn5plAXhfRBYvmm8xk2751rZ43gC3crYjvwxg";
 const MODEL_NAME = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -76,12 +76,15 @@ async function askGemini(userText) {
 async function startWhatsApp() {
   const authDir = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: ['Calde Studio Bot', 'Chrome', '1.0.0']
+    browser: ['Calde Studio', 'Desktop', '1.0.0'],
+    syncFullHistory: false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -97,7 +100,7 @@ async function startWhatsApp() {
       isConnected = false;
       console.log('Conexión cerrada. Reconectando...', shouldReconnect);
       if (shouldReconnect) {
-        startWhatsApp();
+        setTimeout(startWhatsApp, 3000);
       }
     } else if (connection === 'open') {
       isConnected = true;
@@ -107,26 +110,26 @@ async function startWhatsApp() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-
     for (const msg of messages) {
-      // Ignorar mensajes enviados por nosotros mismos
+      if (!msg.message) continue;
       if (msg.key.fromMe) continue;
 
       const remoteJid = msg.key.remoteJid;
+      if (!remoteJid) continue;
 
-      // 1. REGLA DE ORO: Ignorar grupos de WhatsApp completamente
-      if (remoteJid.endsWith('@g.us')) continue;
-      // Ignorar canales o broadcasts
-      if (remoteJid.includes('broadcast') || remoteJid.includes('@newsletter')) continue;
+      // Ignorar grupos, canales y estados
+      if (remoteJid.endsWith('@g.us') || remoteJid.includes('broadcast') || remoteJid.includes('@newsletter')) {
+        continue;
+      }
 
-      // 2. Extraer texto del mensaje
+      // Extraer texto
       const text = msg.message?.conversation ||
                    msg.message?.extendedTextMessage?.text ||
                    msg.message?.imageMessage?.caption || '';
 
-      // Si es solo una imagen sin texto (por ejemplo el comprobante QR)
+      // Comprobante de pago (imagen)
       if (msg.message?.imageMessage && !text) {
+        console.log(`[Comprobante recibido de ${remoteJid}]`);
         await sock.sendMessage(remoteJid, {
           text: "Comprobante recibido. Queda registrado para tu cita. Te esperamos en el estudio."
         });
@@ -135,19 +138,22 @@ async function startWhatsApp() {
 
       if (!text || text.trim() === '') continue;
 
-      console.log(`[Mensaje entrante de ${remoteJid}]: ${text}`);
+      console.log(`[Mensaje de cliente ${remoteJid}]: ${text}`);
 
-      // 3. Responder con la IA de Calde Studio
-      const reply = await askGemini(text);
-      if (reply) {
-        await sock.sendMessage(remoteJid, { text: reply });
-        console.log(`[Respuesta enviada a ${remoteJid}]: ${reply}`);
+      try {
+        const reply = await askGemini(text);
+        if (reply) {
+          await sock.sendMessage(remoteJid, { text: reply });
+          console.log(`[Respuesta enviada a ${remoteJid}]: ${reply}`);
+        }
+      } catch (err) {
+        console.error('Error enviando respuesta:', err.message);
       }
     }
   });
 }
 
-// Panel Web para ver estado y escanear QR fácilmente desde el celular o PC
+// Panel Web
 app.get('/', (req, res) => {
   if (isConnected) {
     res.send(`
